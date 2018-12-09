@@ -18,5 +18,5 @@ We show how to apply g-HESS to simulation data. This repository mainly contains 
 
 ## Scripts
 1. [Compute the inverse of the genotype covariance matrix](./ld)
-2. Simulate GWAS
-3. Apply g-HESS
+2. [Simulate GWAS](./sim_gwas)
+3. [Apply g-HESS](./ghess)
