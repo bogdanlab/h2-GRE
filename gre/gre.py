@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import fire
 from os.path import join
+from os.path import exists
 from scipy import linalg
 import logging
 
@@ -53,6 +54,15 @@ def cut_ld(bfile, chunk_size, ld_dir):
         col_list.append('{}-{}'.format(col_start, col_end))
     df = pd.DataFrame({'row': row_list, 'col': col_list}, columns=['row', 'col'])
     df.to_csv(join(ld_dir, 'part.info'), index=False, header=False, sep='\t')
+
+def check_ld(ld_dir):
+    part_info = pd.read_table(join(ld_dir, 'part.info'), header=None, sep='\t', names=['row', 'col'])
+    part_num = part_info.shape[0]
+    missing_list = []
+    for part_i in range(1, part_num + 1):
+        if not exists(join(ld_dir, 'part_{}.npy'.format(part_i))):
+            missing_list.append(part_i)
+    np.savetxt(join(ld_dir, 'part.missing'), missing_list, fmt='%d')
 
 def calc_ld(bfile, part_i, ld_dir):
     # INFO: part_i counting from 1
