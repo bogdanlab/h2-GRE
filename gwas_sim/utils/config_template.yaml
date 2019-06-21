@@ -1,0 +1,19 @@
+num_sim: 100
+bfile: /u/scratch/k/kangchen/gwas_sim/utils/out/10k
+chunk_size: 500
+num_part: 5
+mean_std_dir: ./mean_std
+beta_dir: ./beta
+phe_g_dir: ./phe_g
+phe_dir: ./phe
+zsc_dir: ./zsc
+seed: 1234
+h2g: 0.25
+sumher:
+  ldak_weights: /u/scratch/k/kangchen/gwas_sim/utils/out/sections/ldak_weights.txt
+  cau_ratio: 0.01
+  maf_low: 0.05
+  maf_high: 0.5
+  maf_exponent: 0.75
+  ld_exponent: 1.0
+
