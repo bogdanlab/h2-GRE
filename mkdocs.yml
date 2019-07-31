@@ -1,0 +1,37 @@
+site_name: h2-GRE
+site_description: 'Documentation for h2-GRE'
+site_author: 'Kangcheng Hou'
+site_url: 'https://bogdanlab.github.io/h2-GRE'
+
+
+# Repository
+repo_url: 'https://github.com/bogdanlab/h2-GRE'
+
+
+# Documentation and theme
+theme: 
+  name: 'flatly'
+
+# define pages
+nav:
+    - Home: 'index.md'
+    - Input Data: 'input_data.md'
+    - Estimation:
+        - 'OLS regression': 'ols.md'
+        - 'Computing the inverse LD matrix': 'ld.md'
+        - 'Calculating the h2gre': 'estimate_h2gre.md'
+    - Demo: 'biobank_demo.md'
+    - Simulation: 'simulation.md'
+    - FAQ: 'faq.md'
+
+
+# # Extensions
+markdown_extensions:
+  - mdx_math
+  # - codehilite(guess_lang=false)
+  - admonition
+  - toc(permalink=true)
+
+extra_javascript:
+  - https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS_HTML
+  # - assets/mathjaxhelper.js
