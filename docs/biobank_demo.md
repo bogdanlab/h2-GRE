@@ -60,21 +60,6 @@ You should get 22 association file after this step. Each contains the OLS sumsta
 
 ## Estimating  using GRE
 
-### Divide the genotype into 22 parts by chromosome using plink
-```bash
-# now in root directory
-mkdir genotype
-
-for chr_i in $(seq 1 22)
-do
-    plink \
-    --bfile ${all_bfile}
-    --chr ${chr_i}
-    --make-bed
-    --out genotype/chr${chr_i}
-done
-```
-
 ### Download GRE
 ```bash
 git clone https://github.com/bogdanlab/h2-GRE.git
@@ -105,11 +90,10 @@ done
 #$ -t 1-22
 
 chr_i=$SGE_TASK_ID
-bfile=./genotype/chr${chr_i}
 ld_dir=./ld/chr${chr_i}
 chunk_size=500
 gre_path=./h2-GRE/gre/gre.py
-python ${gre_path} mean-std --bfile=${bfile} --chunk-size=${chunk_size} --ld-dir=${ld_dir}
+python ${gre_path} mean-std --bfile=${all_bfile} --chunk-size=${chunk_size} --ld-dir=${ld_dir} --chr-i=${chr_i}
 ```
 
 ```bash
@@ -125,7 +109,7 @@ In the following few steps, we compute the LD matrix efficiently. We achieve thi
 ```bash
 for chr_i in $(seq 1 22)
 do
-    python ${gre_path} cut-ld --bfile ./genotype/chr${chr_i} --chunk-size 1000 --ld-dir ./ld/chr${chr_i}
+    python ${gre_path} cut-ld --bfile ${all_bfile} --chunk-size 1000 --ld-dir ./ld/chr${chr_i} --chr-i=${chr_i}
     python ${gre_path} check-ld ./ld/chr${chr_i}
 done
 ```
@@ -147,15 +131,14 @@ First create two scripts, `calc_ld.sh`, `run_calc_ld.sh`.
 chr_i=$1
 batch_size=$2
 
-bfile=./genotype/chr${chr_i}
-ld_dir=./ld/${chr_i}
+ld_dir=./ld/chr${chr_i}
 gre_path=./h2-GRE/gre/gre.py
 for i in $(seq 1 ${batch_size})
 do
     line=$((SGE_TASK_ID + i - 1))
     # part.missing contains undone tasks
     task_id=$(awk 'NR == n' n=$line ${ld_dir}/part.missing)
-    python ${gre_path} calc-ld --bfile=${bfile} --part-i=${task_id} --ld-dir=${ld_dir}
+    python ${gre_path} calc-ld --bfile=${all_bfile} --part-i=${task_id} --ld-dir=${ld_dir} --chr-i=${chr_i}
 done
 ```
 
@@ -165,12 +148,11 @@ done
 batch_size=25
 for chr_i in $(seq 1 22)
 do
-    ld_dir=./ld/${chr_i}
+    ld_dir=./ld/chr${chr_i}
     part_num=$(wc -l < ${ld_dir}/part.missing)
     if [ ${part_num} -ne 0 ]; then
         qsub -t 1-${part_num}:${batch_size} calc_ld.sh ${chr_i} ${batch_size}
     fi
-done
 done
 ```
 Then run the `run_calc_ld.sh` to submit the jobs.
@@ -199,28 +181,27 @@ Now we are close to finishing it! We will merge each parts of LD and compute the
 #$ -o ./job_out
 #$ -m a
 
-bfile=$1
-ld_dir=$2
+ld_dir=$1
+chr_i=$2
 gre_path=./h2-GRE/gre/gre.py
-python ${gre_path} merge-ld --bfile=${bfile} --ld-dir=${ld_dir}
+python ${gre_path} merge-ld --bfile=${all_bfile} --ld-dir=${ld_dir} --chr-i=${chr_i}
 ```
 
 ```bash
 for chr_i in $(seq 1 22)
 do
     ld_dir=./ld/chr${chr_i}
-    bfile=./genotype/chr${chr_i}
     if [ $chr_i -le 6 ]
     then
-        qsub -l h_data=60G,h_rt=4:00:00,highp merge_ld.sh ${bfile} ${ld_dir}
+        qsub -l h_data=60G,h_rt=4:00:00,highp merge_ld.sh ${ld_dir} ${chr_i}
     elif [ $chr_i -ge 7 -a $chr_i -le 12 ]
     then
-        qsub -l h_data=40G,h_rt=3:00:00,highp merge_ld.sh ${bfile} ${ld_dir}
+        qsub -l h_data=40G,h_rt=3:00:00,highp merge_ld.sh ${ld_dir} ${chr_i}
     elif [ $chr_i -ge 13 -a $chr_i -le 20 ]
     then
-        qsub -l h_data=24G,h_rt=2:00:00,highp merge_ld.sh ${bfile} ${ld_dir}
+        qsub -l h_data=24G,h_rt=2:00:00,highp merge_ld.sh ${ld_dir} ${chr_i}
     else
-        qsub -l h_data=10G,h_rt=1:00:00,highp merge_ld.sh ${bfile} ${ld_dir}
+        qsub -l h_data=10G,h_rt=1:00:00,highp merge_ld.sh ${ld_dir} ${chr_i}
     fi
 done
 ```
@@ -228,13 +209,7 @@ done
 Now we have all the ingredients needed for GRE and we are ready to get the SNP-heritability.
 
 ### Estimating SNP-heritability
-Converting the sumstats in plink format into LDSC format.
-```bash
-for chr_i in $(seq 1 22)
-do
-    python ./h2-GRE/utils/utils.py sumstats-plink2ldsc --plink-sumstats ./assoc/chr${chr_i}.assoc.linear --legend ./genotype/chr${chr_i}.bim --out ./assoc/chr${chr_i}.ldsc.txt
-done
-```
+
 
 Estimate SNP-heritability
 
@@ -247,11 +222,11 @@ Estimate SNP-heritability
 #$ -o ./job_out
 #$ -t 1-22:1
 
+gre_path=./h2-GRE/gre/gre.py
 chr_i=${SGE_TASK_ID}
-legend=./genotype/chr${chr_i}.bim
 ld_dir=./ld/chr${chr_i}
-sumstats=./assoc/chr${chr_i}.ldsc.txt
-python gre.py estimate --legend=${legend} --ld-dir=${ld_dir} --sumstats=${sumstats} > ./estimate/chr${chr_i}.txt
+sumstats=./assoc/chr${chr_i}.assoc.linear
+python ${gre_path} estimate --bfile=${all_bfile} --ld-dir=${ld_dir} --sumstats=${sumstats} --chr-i=${chr_i} > ./estimate/chr${chr_i}.txt
 ```
 ```bash
 qsub estimate.sh

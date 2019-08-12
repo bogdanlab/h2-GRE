@@ -7,16 +7,18 @@ from os.path import exists
 from scipy import linalg
 import logging
 
-def mean_std(bfile, chunk_size, ld_dir):
-
-    genotype = Bed(bfile, count_A1=False)
-    row_count = genotype.row_count
-    col_count = genotype.col_count
+def mean_std(bfile, chunk_size, ld_dir, chr_i=None):
+    geno = Bed(bfile, count_A1=False)
+    if chr_i is not None:
+        snp_chr = geno.pos[:, 0]
+        geno = geno[:, snp_chr == chr_i]
+    row_count = geno.row_count
+    col_count = geno.col_count
     mean = np.zeros(col_count)
     std = np.zeros(col_count)
 
     for i in range(0, col_count, chunk_size):
-        sub_geno = genotype[:, i : i + chunk_size].read().val
+        sub_geno = geno[:, i : i + chunk_size].read().val
         sub_mean = np.nanmean(sub_geno, axis=0)
         mean[i : i + chunk_size] = sub_mean
         nanidx = np.where(np.isnan(sub_geno))
@@ -32,8 +34,11 @@ def std_geno(geno, mean, std):
     geno_std = np.nan_to_num((geno - mean) / std)
     return geno_std
 
-def cut_ld(bfile, chunk_size, ld_dir):
+def cut_ld(bfile, chunk_size, ld_dir, chr_i=None):
     geno = Bed(bfile, count_A1=False)
+    if chr_i is not None:
+        snp_chr = geno.pos[:, 0]
+        geno = geno[:, snp_chr == chr_i]
     snp_num = geno.col_count
     # number of chunks snps devides into
     chunk_num = int(np.ceil(float(snp_num) / chunk_size))
@@ -56,7 +61,7 @@ def cut_ld(bfile, chunk_size, ld_dir):
     df.to_csv(join(ld_dir, 'part.info'), index=False, header=False, sep='\t')
 
 def check_ld(ld_dir):
-    part_info = pd.read_table(join(ld_dir, 'part.info'), header=None, sep='\t', names=['row', 'col'])
+    part_info = pd.read_csv(join(ld_dir, 'part.info'), header=None, sep='\t', names=['row', 'col'])
     part_num = part_info.shape[0]
     missing_list = []
     for part_i in range(1, part_num + 1):
@@ -64,11 +69,16 @@ def check_ld(ld_dir):
             missing_list.append(part_i)
     np.savetxt(join(ld_dir, 'part.missing'), missing_list, fmt='%d')
 
-def calc_ld(bfile, part_i, ld_dir):
+def calc_ld(bfile, part_i, ld_dir, chr_i=None):
     # INFO: part_i counting from 1
     geno = Bed(bfile, count_A1=False)
-    mean_std = pd.read_table(join(ld_dir, 'mean_std.txt'))
-    part_info = pd.read_table(join(ld_dir, 'part.info'), header=None, sep='\t')
+
+    if chr_i is not None:
+        snp_chr = geno.pos[:, 0]
+        geno = geno[:, snp_chr == chr_i]
+
+    mean_std = pd.read_csv(join(ld_dir, 'mean_std.txt'), sep='\t')
+    part_info = pd.read_csv(join(ld_dir, 'part.info'), header=None, sep='\t')
     part_info.columns = ['row', 'col']
 
     row_start, row_end = [int(i) for i in part_info['row'][part_i - 1].split('-')]
@@ -80,12 +90,17 @@ def calc_ld(bfile, part_i, ld_dir):
     cov = np.dot(std_row_geno.T, std_col_geno) / (std_row_geno.shape[0])
     np.save(join(ld_dir, 'part_{}.npy'.format(part_i)), cov)
 
-def merge_ld(bfile, ld_dir):
+def merge_ld(bfile, ld_dir, chr_i=None):
 
     geno = Bed(bfile, count_A1=False)
+
+    if chr_i is not None:
+        snp_chr = geno.pos[:, 0]
+        geno = geno[:, snp_chr == chr_i]
+
     snp_num = geno.col_count
     cov = np.zeros([snp_num, snp_num])
-    part_info = pd.read_table(join(ld_dir, 'part.info'), header=None, sep='\t', names=['row', 'col'])
+    part_info = pd.read_csv(join(ld_dir, 'part.info'), header=None, sep='\t', names=['row', 'col'])
 
     for part_i, part in part_info.iterrows():
         row_start, row_end = [int(i) for i in part_info['row'][part_i].split('-')]
@@ -101,24 +116,27 @@ def merge_ld(bfile, ld_dir):
     with open(join(ld_dir, 'rank.txt'), 'w') as f:
         f.write(str(rank))
 
-def estimate(legend, ld_dir, sumstats):
-    # 1. read legend & check if match
-    # 2. estimate
-    legend = pd.read_table(legend, header=None, sep='\t', names=['CHR', 'SNP', 'CM', 'BP', 'A1', 'A2'])
-    sumstats = pd.read_table(sumstats)
-    SNP_same = (legend['SNP'] == sumstats['SNP']).all()
-    A1_same = (legend['A1'] == sumstats['A1']).all()
-    A2_same = (legend['A2'] == sumstats['A2']).all()
-    if not (SNP_same & A1_same & A2_same):
-        print('Reference panel of sumstats and genotype does not match')
-        return
-
+def estimate(bfile, ld_dir, sumstats, chr_i=None):
+    """
+    estimate the h2gre using in-sample sumstats
+    """
+    legend = pd.read_csv(bfile + '.bim', header=None, sep='\t', names=['CHR', 'SNP', 'CM', 'BP', 'A1', 'A2'])
+    sumstats = pd.read_csv(sumstats, delim_whitespace=True)
+    
+    if chr_i is not None:
+        legend = legend[legend.CHR == chr_i].reset_index(drop=True)
+        sumstats = sumstats[sumstats.CHR == chr_i].reset_index(drop=True)
+    
+    assert((legend['SNP'] == sumstats['SNP']).all())
+    assert((legend['A1'] == sumstats['A1']).all())
+        
+    
     # if match, start to estimate
     inv_ld = np.load(join(ld_dir, 'inv_ld.npy'))
     rank = np.loadtxt(join(ld_dir, 'rank.txt'))
-    num_indv = np.mean(sumstats.N.values)
+    num_indv = np.mean(sumstats.NMISS.values)
 
-    beta_gwas = sumstats.Z.values / np.sqrt(num_indv)
+    beta_gwas = (sumstats.BETA / sumstats.SE / np.sqrt(sumstats.NMISS)).values
     quad_form_func = (lambda x, A : np.dot(np.dot(x.T, A), x))
     quad_form = quad_form_func(beta_gwas, inv_ld)
     est = (num_indv * quad_form - rank) / (num_indv - rank)
